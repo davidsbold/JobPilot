@@ -30,7 +30,12 @@ export const PRIMARY_SEARCH_QUERIES = [
     'Virtualisierung',
     'Active Directory Administrator',
     'M365 Administrator',
-    'Exchange Administrator'
+    'Exchange Administrator',
+    'IT-Systembetreuer',
+    'System Engineer',
+    'Infrastructure Engineer',
+    'IT-Spezialist',
+    'IT Consultant'
 ];
 
 export const IT_SYSADMIN_KEYWORDS = [
@@ -63,7 +68,12 @@ export const IT_SYSADMIN_KEYWORDS = [
     'virtualisierung',
     'active directory administrator',
     'm365 administrator',
-    'exchange administrator'
+    'exchange administrator',
+    'it-systembetreuer',
+    'system engineer',
+    'infrastructure engineer',
+    'it-spezialist',
+    'it consultant'
 ];
 
 

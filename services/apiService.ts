@@ -11,7 +11,7 @@ const JOB_CACHE_KEY = 'jobpilot-job-cache';
 
 const API_FETCH_PAGES = {
     // arbeitnow: no pagination on main endpoint, fetches latest ~300
-    adzuna: 50, // Increased from 20 to 50 to maximize job results.
+    adzuna: 200, // Increased from 100 to 200 to maximize job results.
 };
 
 interface UserContext {
@@ -255,7 +255,7 @@ const fetchJoobleJobs = async (): Promise<any[]> => {
     const fetchJobsForQuery = async (query: string): Promise<any[]> => {
         const queryJobs: any[] = [];
         console.log(`Jooble: Starting fetch for query "${query}"...`);
-        for (let page = 1; page <= 10; page++) { // Fetch up to 10 pages for comprehensive results
+        for (let page = 1; page <= 50; page++) { // Increased from 25 to 50 for more results
             try {
                 const url = `https://de.jooble.org/api/${JOOBLE_API_KEY}`;
                 const response = await fetchWithRetry(url, {
@@ -321,7 +321,7 @@ const fetchJobicyJobs = async (): Promise<any[]> => {
         'sysadmin', 'support', 'devops', 'administrator', 'netzwerk', 'cloud', 
         'it-support', 'linux', 'windows', 'security', 'infrastructure'
     ].join(',');
-    const url = `https://jobicy.com/api/v2/remote-jobs?count=50&geo=de,eu&industry=it&tag=${tags}`;
+    const url = `https://jobicy.com/api/v2/remote-jobs?count=5000&geo=de,eu&industry=it&tag=${tags}`;
     try {
         const response = await fetchWithRetry(url);
         const data = await response.json();

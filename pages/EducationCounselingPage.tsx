@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Job } from '../types';
 import { fetchJobs, generateSuitabilityLetter, ParticipantData } from '../services/apiService';
 import { Card } from '../components/ui/Card';
@@ -32,36 +32,54 @@ export const EducationCounselingPage: React.FC = () => {
         preferences: ''
     });
     const [jobs, setJobs] = useState<Job[]>([]);
-    const [isLoadingJobs, setIsLoadingJobs] = useState(true);
+    const [isLoadingJobs, setIsLoadingJobs] = useState(false);
+    const [jobsSearched, setJobsSearched] = useState(false);
     const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
     const [generatedLetter, setGeneratedLetter] = useState<string>('');
     const [isGenerating, setIsGenerating] = useState(false);
 
-    useEffect(() => {
-        const loadJobs = async () => {
-            setIsLoadingJobs(true);
-            try {
-                const { jobs: allJobs } = await fetchJobs(false);
-                const healthcareKeywords = ['gesundheitswesen', 'klinik', 'krankenhaus', 'praxis', 'medizin', 'pharma', 'healthcare', 'hospital', 'clinic', 'medical'];
-                const checkHealthcareKeywords = (text: string): boolean => {
-                    const normalizedText = text.toLowerCase();
-                    return healthcareKeywords.some(keyword => normalizedText.includes(keyword));
-                };
+    const handleJobSearch = async () => {
+        setIsLoadingJobs(true);
+        setJobsSearched(true);
+        try {
+            const { jobs: allJobs } = await fetchJobs(false);
+            const healthcareKeywords = [
+                'gesundheitswesen', 'klinik', 'krankenhaus', 'praxis', 'medizin', 'pharma', 
+                'healthcare', 'hospital', 'clinic', 'medical', 'e-health', 'digital health',
+                'ärzte', 'pflege', 'labor', 'diagnostik', 'medizintechnik', 'reha'
+            ];
+            
+            const checkHealthcareKeywords = (text: string): boolean => {
+                const normalizedText = text.toLowerCase();
+                return healthcareKeywords.some(keyword => normalizedText.includes(keyword));
+            };
 
-                const filtered = allJobs.filter(job => {
-                    const jobText = `${job.title} ${job.description}`.toLowerCase();
-                    const isHealthcare = checkHealthcareKeywords(jobText);
-                    return isHealthcare && job.career_switch && job.remote;
-                });
-                setJobs(filtered);
-            } catch (error) {
-                console.error("Failed to load jobs for counseling page:", error);
-            } finally {
-                setIsLoadingJobs(false);
-            }
-        };
-        loadJobs();
-    }, []);
+            // First, filter for any job related to healthcare. This is the only hard filter.
+            const healthcareJobs = allJobs.filter(job => {
+                const jobText = `${job.title} ${job.description}`.toLowerCase();
+                return checkHealthcareKeywords(jobText);
+            });
+
+            // Then, score and sort these jobs to prioritize the most relevant ones.
+            const scoredAndSortedJobs = healthcareJobs
+                .map(job => {
+                    let score = 0;
+                    if (job.career_switch) score += 2; // High priority
+                    if (job.is_junior) score += 1;
+                    if (job.remote) score += 1;
+                    return { ...job, score };
+                })
+                .sort((a, b) => b.score - a.score); // Sort by score, highest first
+
+            setJobs(scoredAndSortedJobs);
+
+        } catch (error) {
+            console.error("Failed to load jobs for counseling page:", error);
+            setJobs([]);
+        } finally {
+            setIsLoadingJobs(false);
+        }
+    };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -162,6 +180,17 @@ export const EducationCounselingPage: React.FC = () => {
                         <textarea name="preferences" id="preferences" rows={2} value={formData.preferences} onChange={handleInputChange} className="mt-1 input-field" />
                     </div>
                 </div>
+                 <div className="mt-6 border-t pt-6">
+                    <button
+                        onClick={handleJobSearch}
+                        disabled={!isFormComplete || isLoadingJobs}
+                        className="px-6 py-2 bg-sky-600 text-white font-semibold rounded-md hover:bg-sky-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        {isLoadingJobs && <Spinner className="w-5 h-5 border-white border-t-sky-300" />}
+                        {isLoadingJobs ? 'Suche...' : 'Passende Jobs suchen'}
+                    </button>
+                    {!isFormComplete && <p className="text-xs text-red-500 mt-2">Bitte füllen Sie Name, Hintergrund, Kompetenzen, Motivation und Förderbegründung aus.</p>}
+                </div>
             </Card>
 
             {/* Step 2 */}
@@ -183,33 +212,51 @@ export const EducationCounselingPage: React.FC = () => {
             </Card>
 
             {/* Step 3 */}
-            <Card className="p-6">
+            <Card className="p-6 min-h-[200px]">
                  <h2 className="text-2xl font-semibold mb-4 border-b pb-2">Schritt 3: Passende Stellenangebote auswählen</h2>
-                 <p className="text-sm text-slate-500 mb-4">Angezeigt werden aktuelle Remote-Stellen für Quereinsteiger im Gesundheitswesen.</p>
-                 {isLoadingJobs ? <Spinner /> : (
-                     <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                         {jobs.length > 0 ? jobs.map(job => (
-                             <div key={job.id} className="flex items-start gap-3 p-3 border rounded-md hover:bg-slate-50">
-                                 <input
-                                    type="checkbox"
-                                    id={`job-${job.id}`}
-                                    checked={selectedJobs.has(job.id)}
-                                    onChange={() => handleToggleJobSelection(job.id)}
-                                    className="mt-1 h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
-                                />
-                                 <label htmlFor={`job-${job.id}`} className="cursor-pointer">
-                                    <p className="font-semibold">{job.title}</p>
-                                    <p className="text-sm text-slate-600">{job.company}</p>
-                                    <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-sm text-sky-600 hover:underline">Details</a>
-                                 </label>
-                             </div>
-                         )) : <p>Keine passenden Stellen in der Datenbank gefunden.</p>}
-                     </div>
+                 {isLoadingJobs ? (
+                    <div className="flex justify-center items-center h-full pt-10">
+                        <Spinner />
+                        <span className="ml-4 text-slate-600">Suche nach relevanten Stellen...</span>
+                    </div>
+                 ) : !jobsSearched ? (
+                    <div className="flex justify-center items-center h-full pt-10">
+                        <p className="text-slate-500">Starten Sie die Jobsuche in Schritt 1, um passende Angebote zu finden.</p>
+                    </div>
+                 ) : (
+                     <>
+                        <p className="text-sm text-slate-500 mb-4">
+                           {jobs.length > 0
+                               ? `Es wurden ${jobs.length} passende Stellen im Gesundheitswesen gefunden. Jobs für Quereinsteiger und Remote-Arbeit werden priorisiert. Wählen Sie die relevantesten aus, um sie in das Schreiben aufzunehmen.`
+                               : 'Es konnten keine passenden Stellen im Gesundheitswesen gefunden werden. Versuchen Sie es später erneut.'
+                           }
+                        </p>
+                        {jobs.length > 0 ? (
+                            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                                {jobs.map(job => (
+                                    <div key={job.id} className="flex items-start gap-3 p-3 border rounded-md hover:bg-slate-50">
+                                        <input
+                                           type="checkbox"
+                                           id={`job-${job.id}`}
+                                           checked={selectedJobs.has(job.id)}
+                                           onChange={() => handleToggleJobSelection(job.id)}
+                                           className="mt-1 h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                       />
+                                        <label htmlFor={`job-${job.id}`} className="cursor-pointer flex-grow">
+                                           <p className="font-semibold">{job.title}</p>
+                                           <p className="text-sm text-slate-600">{job.company}</p>
+                                           <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-sm text-sky-600 hover:underline">Details</a>
+                                        </label>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : <p className="text-center py-10 text-slate-500">Keine passenden Stellen in der Datenbank gefunden.</p>}
+                     </>
                  )}
             </Card>
 
             {/* Step 4 & 5 */}
-            <Card className="p-6 sticky bottom-6">
+            <Card className="p-6 sticky bottom-6 z-10">
                 <h2 className="text-2xl font-semibold mb-4 border-b pb-2">Schritt 4 & 5: Schreiben generieren & exportieren</h2>
                 <div className="flex items-center gap-4">
                     <button
