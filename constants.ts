@@ -1,0 +1,110 @@
+import { JobSource } from './types';
+
+export const PRIMARY_SEARCH_QUERIES = [
+    'Systemadministrator',
+    'Systemadministration',
+    'IT-Administrator',
+    'IT-Administration',
+    'Netzwerkadministrator',
+    'Netzwerkadministration',
+    'Netzwerk- und Systembetreuer',
+    'IT-Support Specialist',
+    'IT-Support',
+    'IT-Helpdesk',
+    'IT-Servicedesk',
+    'IT-Infrastruktur-Administrator',
+    'IT-Operations',
+    'IT-Betrieb',
+    'IT-Techniker',
+    'Systemtechniker',
+    'Fachinformatiker Systemintegration',
+    'Windows Administrator',
+    'Linux Administrator',
+    'Cloud Administrator',
+    'Cloud Engineer',
+    'DevOps Engineer',
+    'IT-Security Administrator',
+    'Datenbankadministrator',
+    'DBA',
+    'VMware Administrator',
+    'Virtualisierung',
+    'Active Directory Administrator',
+    'M365 Administrator',
+    'Exchange Administrator'
+];
+
+export const IT_SYSADMIN_KEYWORDS = [
+    'systemadministrator',
+    'systemadministration',
+    'it-administrator',
+    'it-administration',
+    'netzwerkadministrator',
+    'netzwerkadministration',
+    'netzwerk- und systembetreuer',
+    'it-support specialist',
+    'it-support',
+    'it-helpdesk',
+    'it-servicedesk',
+    'it-infrastruktur-administrator',
+    'it-operations',
+    'it-betrieb',
+    'it-techniker',
+    'systemtechniker',
+    'fachinformatiker systemintegration',
+    'windows administrator',
+    'linux administrator',
+    'cloud administrator',
+    'cloud engineer',
+    'devops engineer',
+    'it-security administrator',
+    'datenbankadministrator',
+    'dba',
+    'vmware administrator',
+    'virtualisierung',
+    'active directory administrator',
+    'm365 administrator',
+    'exchange administrator'
+];
+
+
+export const CAREER_SWITCH_KEYWORDS = [
+    'quereinstieg', 'quereinsteiger', 'einsteiger', 'junior', 'trainee',
+    'berufseinsteiger', 'absolvent', 'nachwuchs'
+];
+
+export const JUNIOR_LEVEL_KEYWORDS = ['junior', 'einsteiger', 'trainee', 'absolvent'];
+
+export const ALL_SOURCES: JobSource[] = [JobSource.ARBEITNOW, JobSource.ADZUNA, JobSource.JOOBLE, JobSource.GERMANTECHJOBS, JobSource.JOBICY];
+
+export const SKILL_TAXONOMY: { key: string; label: string; aliases: string[] }[] = [
+    { key: 'windows', label: 'Windows', aliases: ['windows', 'windows server'] },
+    { key: 'linux', label: 'Linux', aliases: ['linux', 'debian', 'ubuntu', 'centos', 'red hat'] },
+    { key: 'active_directory', label: 'Active Directory', aliases: ['active directory', 'ad', 'gruppenrichtlinien', 'group policy'] },
+    { key: 'azure_ad', label: 'Azure AD', aliases: ['azure ad', 'entra id'] },
+    { key: 'm365_o365', label: 'M365/O365', aliases: ['m365', 'o365', 'office 365', 'microsoft 365'] },
+    { key: 'exchange', label: 'Exchange', aliases: ['exchange'] },
+    { key: 'sharepoint', label: 'SharePoint', aliases: ['sharepoint'] },
+    { key: 'teams', label: 'MS Teams', aliases: ['teams', 'ms teams'] },
+    { key: 'tcp_ip', label: 'TCP/IP', aliases: ['tcp/ip'] },
+    { key: 'dns_dhcp', label: 'DNS/DHCP', aliases: ['dns', 'dhcp'] },
+    { key: 'firewall', label: 'Firewall', aliases: ['firewall', 'pfsense', 'fortinet', 'palo alto'] },
+    { key: 'vpn', label: 'VPN', aliases: ['vpn'] },
+    { key: 'vmware', label: 'VMware', aliases: ['vmware', 'vsphere', 'esxi'] },
+    { key: 'hyperv', label: 'Hyper-V', aliases: ['hyper-v', 'hyperv'] },
+    { key: 'azure', label: 'Azure', aliases: ['azure', 'microsoft azure'] },
+    { key: 'aws', label: 'AWS', aliases: ['aws', 'amazon web services'] },
+    { key: 'docker', label: 'Docker', aliases: ['docker'] },
+    { key: 'kubernetes', label: 'Kubernetes', aliases: ['kubernetes', 'k8s'] },
+    { key: 'powershell', label: 'PowerShell', aliases: ['powershell'] },
+    { key: 'bash', label: 'Bash', aliases: ['bash', 'shell script'] },
+    { key: 'python', label: 'Python', aliases: ['python'] },
+    { key: 'ansible', label: 'Ansible', aliases: ['ansible'] },
+    { key: 'ticketsystem', label: 'Ticketsystem', aliases: ['ticketsystem', 'ticket system', 'jira', 'servicenow'] },
+    { key: 'itil', label: 'ITIL', aliases: ['itil'] },
+    { key: 'monitoring', label: 'Monitoring', aliases: ['monitoring', 'nagios', 'icinga', 'prometheus', 'grafana'] },
+    { key: 'backup_restore', label: 'Backup & Restore', aliases: ['backup', 'restore', 'veeam', 'disaster recovery'] },
+    { key: 'kundenkommunikation', label: 'Kundenkommunikation', aliases: ['kundenkommunikation', 'customer support', 'kundensupport'] },
+    { key: 'teamarbeit', label: 'Teamarbeit', aliases: ['teamarbeit', 'teamplayer', 'teamfähigkeit'] },
+    { key: 'deutsch', label: 'Deutsch', aliases: ['deutsch', 'german'] },
+    { key: 'englisch', label: 'Englisch', aliases: ['englisch', 'english'] }
+];

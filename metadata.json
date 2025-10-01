@@ -1,0 +1,5 @@
+{
+  "name": "JobPilot",
+  "description": "Eine Web-App zum Sammeln, Filtern und Analysieren von IT-Systemadministrator-Stellenangeboten, einschließlich der KI-gestützten Erstellung von Motivationsschreiben.",
+  "requestFramePermissions": []
+}
