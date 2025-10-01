@@ -84,7 +84,7 @@ export const CAREER_SWITCH_KEYWORDS = [
 
 export const JUNIOR_LEVEL_KEYWORDS = ['junior', 'einsteiger', 'trainee', 'absolvent'];
 
-export const ALL_SOURCES: JobSource[] = [JobSource.ARBEITNOW, JobSource.ADZUNA, JobSource.JOOBLE, JobSource.GERMANTECHJOBS, JobSource.JOBICY];
+export const ALL_SOURCES: JobSource[] = [JobSource.ARBEITNOW, JobSource.ADZUNA, JobSource.JOOBLE, JobSource.GERMANTECHJOBS, JobSource.JOBICY, JobSource.ARBEITSAGENTUR];
 
 export const SKILL_TAXONOMY: { key: string; label: string; aliases: string[] }[] = [
     { key: 'windows', label: 'Windows', aliases: ['windows', 'windows server'] },

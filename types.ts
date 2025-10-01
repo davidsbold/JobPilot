@@ -11,6 +11,7 @@ export enum JobSource {
   JOOBLE = 'Jooble',
   GERMANTECHJOBS = 'GermanTechJobs',
   JOBICY = 'Jobicy',
+  ARBEITSAGENTUR = 'Bundesagentur für Arbeit',
 }
 
 export interface Job {

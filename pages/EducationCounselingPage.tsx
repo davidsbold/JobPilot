@@ -1,24 +1,39 @@
 import React, { useState } from 'react';
 import { Job } from '../types';
-import { fetchJobs, generateSuitabilityLetter, ParticipantData } from '../services/apiService';
+import { fetchJobs, generateSuitabilityLetter, ParticipantData, CourseInfo } from '../services/apiService';
 import { Card } from '../components/ui/Card';
 import { Spinner } from '../components/ui/Spinner';
 
-const courseInfo = {
-    title: "IT-Fachkraft im Gesundheitswesen mit Schwerpunkt IT-Systemadministration",
-    duration: "ca. 12 Monate",
-    degree: "IHK-Zertifikat, AZAV-zertifiziert, anerkannte IT-Zertifikate",
-    goal: "Qualifizierung zum IT-Systemadministrator mit Fokus Gesundheitswesen",
-    modules: [
-        "Grundlagen IT-Systeme & Support (Ticketing, Betriebssysteme, Datenschutz, Kommunikation)",
-        "Netzwerke & Netzwerksicherheit (TCP/IP, Routing, Firewalls, VPN, Security Basics)",
-        "Systemadministration Windows & Linux (Active Directory, Benutzerverwaltung, Rechte, Serverdienste)",
-        "IT-Security & Datenschutz im Gesundheitswesen (DSGVO, Zugriffskontrollen, IT-Sicherheitsrichtlinien)",
-        "Praxis- und Klinikanwendungen (digitale Patientenakten, Krankenhaus-IT, Schnittstellen HL7/FHIR)",
-        "Projektarbeit & Prüfungsvorbereitung (Praxisprojekt, Prüfungssimulation, Abschlussgespräch)"
-    ],
-    value: "praxisnah, digital durchführbar, hohe Arbeitsmarktrelevanz im Gesundheitswesen."
+const COURSES: Record<string, CourseInfo> = {
+    SYSTEM_ADMINISTRATION: {
+        title: "IT-Fachkraft im Gesundheitswesen mit Schwerpunkt IT-Systemadministration",
+        duration: "ca. 12 Monate",
+        degree: "IHK-Zertifikat, AZAV-zertifiziert, anerkannte IT-Zertifikate",
+        goal: "Qualifizierung zum IT-Systemadministrator mit Fokus Gesundheitswesen",
+        modules: [
+            "Grundlagen IT-Systeme & Support (Ticketing, Betriebssysteme, Datenschutz, Kommunikation)",
+            "Netzwerke & Netzwerksicherheit (TCP/IP, Routing, Firewalls, VPN, Security Basics)",
+            "Systemadministration Windows & Linux (Active Directory, Benutzerverwaltung, Rechte, Serverdienste)",
+            "IT-Security & Datenschutz im Gesundheitswesen (DSGVO, Zugriffskontrollen, IT-Sicherheitsrichtlinien)",
+            "Praxis- und Klinikanwendungen (digitale Patientenakten, Krankenhaus-IT, Schnittstellen HL7/FHIR)",
+            "Projektarbeit & Prüfungsvorbereitung (Praxisprojekt, Prüfungssimulation, Abschlussgespräch)"
+        ],
+        value: "praxisnah, digital durchführbar, hohe Arbeitsmarktrelevanz im Gesundheitswesen."
+    },
+    PROJECT_MANAGEMENT: {
+        title: "IT-Fachkraft im Gesundheitswesen mit Schwerpunkt IT-Projektmanagement",
+        duration: "ca. 12 Monate",
+        degree: "IHK-Zertifikat, AZAV-zertifiziert",
+        goal: "Qualifizierung zur Fachkraft für IT-Projekt- und Prozessmanagement im Gesundheitswesen.",
+        modules: [
+            "Modul 1: MEDIZIN – IT-Projektmanagement und Prozesse (Grundlagen, Prozessmanagement, Digitale Transformation, IT-Systeme, Praxisbeispiele)",
+            "Modul 2: PRAXISLAB IT-Projekt- und Changemanagement im Gesundheitswesen (Anwendung, Fallbeispiele, Tool-Übungen, praxisorientiertes Training)"
+        ],
+        value: "Fokus auf die Schnittstelle zwischen IT und Management, hohe Nachfrage durch Digitalisierungsprojekte."
+    }
 };
+
+type CourseKey = keyof typeof COURSES;
 
 export const EducationCounselingPage: React.FC = () => {
     const [formData, setFormData] = useState<ParticipantData>({
@@ -37,38 +52,77 @@ export const EducationCounselingPage: React.FC = () => {
     const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
     const [generatedLetter, setGeneratedLetter] = useState<string>('');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [selectedCourseKey, setSelectedCourseKey] = useState<CourseKey>('SYSTEM_ADMINISTRATION');
 
     const handleJobSearch = async () => {
         setIsLoadingJobs(true);
         setJobsSearched(true);
         try {
             const { jobs: allJobs } = await fetchJobs(false);
+
+            // 1. Healthcare keywords (base filter)
             const healthcareKeywords = [
                 'gesundheitswesen', 'klinik', 'krankenhaus', 'praxis', 'medizin', 'pharma', 
                 'healthcare', 'hospital', 'clinic', 'medical', 'e-health', 'digital health',
                 'ärzte', 'pflege', 'labor', 'diagnostik', 'medizintechnik', 'reha'
             ];
-            
             const checkHealthcareKeywords = (text: string): boolean => {
                 const normalizedText = text.toLowerCase();
                 return healthcareKeywords.some(keyword => normalizedText.includes(keyword));
             };
 
-            // First, filter for any job related to healthcare. This is the only hard filter.
-            const healthcareJobs = allJobs.filter(job => {
-                const jobText = `${job.title} ${job.description}`.toLowerCase();
-                return checkHealthcareKeywords(jobText);
-            });
+            // Course-specific keywords for bonus scoring
+            const courseSpecificKeywords = selectedCourseKey === 'SYSTEM_ADMINISTRATION'
+                ? ['systemadministrator', 'it-support', 'netzwerk', 'infrastruktur', 'techniker', 'fachinformatiker']
+                : ['projektmanagement', 'projektleiter', 'it-berater', 'consultant', 'prozessmanagement', 'digitalisierung'];
 
-            // Then, score and sort these jobs to prioritize the most relevant ones.
-            const scoredAndSortedJobs = healthcareJobs
+
+            // 2. Extract keywords from participant's profile data
+            const participantText = `${formData.skills} ${formData.background} ${formData.motivation} ${formData.preferences}`.toLowerCase();
+            const participantKeywords = [
+                ...new Set(
+                    participantText
+                        .replace(/[,.]/g, ' ') // Replace punctuation
+                        .split(/\s+/)         // Split by whitespace
+                        .filter(word => word.length > 3) // Filter out common short words
+                )
+            ];
+            const wantsRemote = /remote|homeoffice|mobil/i.test(formData.preferences);
+
+            // 3. Filter and Score jobs based on participant data
+            const scoredAndSortedJobs = allJobs
                 .map(job => {
+                    const jobText = `${job.title} ${job.description}`.toLowerCase();
                     let score = 0;
-                    if (job.career_switch) score += 2; // High priority
-                    if (job.is_junior) score += 1;
-                    if (job.remote) score += 1;
+                    
+                    // Base requirement: Must be a healthcare-related job.
+                    if (!checkHealthcareKeywords(jobText)) {
+                        return { ...job, score: -1 }; // Mark for removal
+                    }
+
+                    // Score based on matching participant's skills and background
+                    participantKeywords.forEach(keyword => {
+                        if (jobText.includes(keyword)) score += 2;
+                    });
+                    
+                    // High bonus for matching the selected course's specialization
+                    courseSpecificKeywords.forEach(keyword => {
+                        if (jobText.includes(keyword)) score += 10;
+                    });
+
+
+                    // Bonus for matching remote preference
+                    if (wantsRemote && job.remote) {
+                        score += 10; // High bonus
+                    }
+                    
+                    // Bonus for being suitable for career changers
+                    if (job.career_switch) score += 5;
+                    if (job.is_junior) score += 3;
+
                     return { ...job, score };
                 })
+                .filter(job => job.score > 0) // Keep only scored jobs (i.e., in healthcare with some matches)
                 .sort((a, b) => b.score - a.score); // Sort by score, highest first
 
             setJobs(scoredAndSortedJobs);
@@ -80,6 +134,7 @@ export const EducationCounselingPage: React.FC = () => {
             setIsLoadingJobs(false);
         }
     };
+
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -103,7 +158,8 @@ export const EducationCounselingPage: React.FC = () => {
         setGeneratedLetter('');
         try {
             const jobsToInclude = jobs.filter(j => selectedJobs.has(j.id));
-            const letter = await generateSuitabilityLetter(formData, jobsToInclude);
+            const selectedCourseInfo = COURSES[selectedCourseKey];
+            const letter = await generateSuitabilityLetter(formData, jobsToInclude, selectedCourseInfo);
             setGeneratedLetter(letter);
         } catch (error) {
             console.error("Failed to generate letter:", error);
@@ -134,8 +190,17 @@ export const EducationCounselingPage: React.FC = () => {
         link.click();
         document.body.removeChild(link);
     };
+    
+    const handleCourseChange = (key: CourseKey) => {
+        setSelectedCourseKey(key);
+        // Reset job search when course changes as results will be different
+        setJobs([]);
+        setJobsSearched(false);
+        setSelectedJobs(new Set());
+    }
 
     const isFormComplete = formData.name && formData.background && formData.skills && formData.motivation && formData.fundingReason;
+    const currentCourse = COURSES[selectedCourseKey];
 
     return (
         <div className="space-y-8">
@@ -195,20 +260,36 @@ export const EducationCounselingPage: React.FC = () => {
 
             {/* Step 2 */}
             <Card className="p-6">
-                <h2 className="text-2xl font-semibold mb-4 border-b pb-2">Schritt 2: Kursinformationen</h2>
-                <h3 className="text-xl font-bold text-sky-700">{courseInfo.title}</h3>
+                <h2 className="text-2xl font-semibold mb-4 border-b pb-2">Schritt 2: Kurs auswählen und Informationen prüfen</h2>
+                
+                <div className="flex rounded-md overflow-hidden border border-slate-300 mb-6">
+                    <button
+                        onClick={() => handleCourseChange('SYSTEM_ADMINISTRATION')}
+                        className={`flex-1 p-3 text-sm font-semibold text-center transition-colors ${selectedCourseKey === 'SYSTEM_ADMINISTRATION' ? 'bg-sky-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+                    >
+                        IT-Systemadministration
+                    </button>
+                    <button
+                        onClick={() => handleCourseChange('PROJECT_MANAGEMENT')}
+                        className={`flex-1 p-3 text-sm font-semibold text-center transition-colors border-l border-slate-300 ${selectedCourseKey === 'PROJECT_MANAGEMENT' ? 'bg-sky-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+                    >
+                        IT-Projektmanagement
+                    </button>
+                </div>
+                
+                <h3 className="text-xl font-bold text-sky-700">{currentCourse.title}</h3>
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-                    <p><span className="font-semibold">Dauer:</span> {courseInfo.duration}</p>
-                    <p><span className="font-semibold">Abschluss:</span> {courseInfo.degree}</p>
-                    <p><span className="font-semibold">Ziel:</span> {courseInfo.goal}</p>
+                    <p><span className="font-semibold">Dauer:</span> {currentCourse.duration}</p>
+                    <p><span className="font-semibold">Abschluss:</span> {currentCourse.degree}</p>
+                    <p><span className="font-semibold">Ziel:</span> {currentCourse.goal}</p>
                 </div>
                 <div className="mt-4">
                     <h4 className="font-semibold mb-2">Inhalte (Module):</h4>
                     <ul className="list-disc list-inside space-y-1 text-sm">
-                        {courseInfo.modules.map(m => <li key={m}>{m}</li>)}
+                        {currentCourse.modules.map(m => <li key={m}>{m}</li>)}
                     </ul>
                 </div>
-                <p className="mt-4 text-sm font-semibold bg-sky-50 p-3 rounded-md">Mehrwert: {courseInfo.value}</p>
+                <p className="mt-4 text-sm font-semibold bg-sky-50 p-3 rounded-md">Mehrwert: {currentCourse.value}</p>
             </Card>
 
             {/* Step 3 */}
@@ -217,18 +298,18 @@ export const EducationCounselingPage: React.FC = () => {
                  {isLoadingJobs ? (
                     <div className="flex justify-center items-center h-full pt-10">
                         <Spinner />
-                        <span className="ml-4 text-slate-600">Suche nach relevanten Stellen...</span>
+                        <span className="ml-4 text-slate-600">Suche nach personalisierten Stellen...</span>
                     </div>
                  ) : !jobsSearched ? (
                     <div className="flex justify-center items-center h-full pt-10">
-                        <p className="text-slate-500">Starten Sie die Jobsuche in Schritt 1, um passende Angebote zu finden.</p>
+                        <p className="text-slate-500">Starten Sie die Jobsuche in Schritt 1, um Angebote passend zum gewählten Kurs zu finden.</p>
                     </div>
                  ) : (
                      <>
                         <p className="text-sm text-slate-500 mb-4">
                            {jobs.length > 0
-                               ? `Es wurden ${jobs.length} passende Stellen im Gesundheitswesen gefunden. Jobs für Quereinsteiger und Remote-Arbeit werden priorisiert. Wählen Sie die relevantesten aus, um sie in das Schreiben aufzunehmen.`
-                               : 'Es konnten keine passenden Stellen im Gesundheitswesen gefunden werden. Versuchen Sie es später erneut.'
+                               ? `Es wurden ${jobs.length} passende Stellen im Gesundheitswesen gefunden, die auf die Teilnehmerdaten und den Kurs "${currentCourse.title}" abgestimmt sind. Wählen Sie die relevantesten aus.`
+                               : 'Es konnten keine passenden Stellen im Gesundheitswesen gefunden werden, die zu den angegebenen Daten und dem gewählten Kurs passen.'
                            }
                         </p>
                         {jobs.length > 0 ? (
@@ -250,7 +331,7 @@ export const EducationCounselingPage: React.FC = () => {
                                     </div>
                                 ))}
                             </div>
-                        ) : <p className="text-center py-10 text-slate-500">Keine passenden Stellen in der Datenbank gefunden.</p>}
+                        ) : <p className="text-center py-10 text-slate-500">Keine passenden Stellen in der Datenbank gefunden, die den Kriterien entsprechen.</p>}
                      </>
                  )}
             </Card>

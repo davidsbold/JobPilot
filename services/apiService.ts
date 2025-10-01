@@ -7,11 +7,13 @@ import { GoogleGenAI } from "@google/genai";
 const ADZUNA_APP_ID = 'd027c711';
 const ADZUNA_APP_KEY = 'e4b2c698c84e6c1bd7e735907aa0e22c';
 const JOOBLE_API_KEY = '8a1ec129-d7ae-4707-90a0-f76c36ff1634';
+const BA_API_KEY = 'jobboerse-jobsuche';
 const JOB_CACHE_KEY = 'jobpilot-job-cache';
 
 const API_FETCH_PAGES = {
     // arbeitnow: no pagination on main endpoint, fetches latest ~300
-    adzuna: 200, // Increased from 100 to 200 to maximize job results.
+    adzuna: 20, // Increased to 20 since we are now doing a single efficient query.
+    arbeitsagentur: 20, // Fetch up to 20 pages per query
 };
 
 interface UserContext {
@@ -30,6 +32,16 @@ export interface ParticipantData {
     fundingReason: string;
     preferences: string;
 }
+
+export interface CourseInfo {
+    title: string;
+    duration: string;
+    degree: string;
+    goal: string;
+    modules: string[];
+    value: string;
+}
+
 
 // --- Helper Functions ---
 const normalizeText = (text: string): string => text.toLowerCase().trim();
@@ -117,6 +129,17 @@ const normalizeJob = (rawJob: any, source: JobSource): Job | null => {
             job.description = rawJob.jobDescription;
             job.tags = Array.isArray(rawJob.jobTag) ? rawJob.jobTag : (rawJob.jobTag ? [rawJob.jobTag] : []);
             job.job_types = rawJob.jobType ? [rawJob.jobType] : [];
+        } else if (source === JobSource.ARBEITSAGENTUR) {
+            sourceId = rawJob.hashId;
+            job.title = rawJob.titel;
+            job.company = rawJob.arbeitgeber;
+            job.location = rawJob.arbeitsort?.ort ? `${rawJob.arbeitsort.ort}, ${rawJob.arbeitsort.plz}` : 'N/A';
+            job.remote = Array.isArray(rawJob.arbeitszeit) && rawJob.arbeitszeit.includes('ho');
+            job.url = `https://www.arbeitsagentur.de/jobsuche/jobdetail/${rawJob.hashId}`;
+            job.created_at = rawJob.aktuelleVeroeffentlichungsdatum;
+            job.description = rawJob.stellenbeschreibung;
+            job.tags = [];
+            job.job_types = [];
         }
 
 
@@ -175,21 +198,33 @@ const normalizeJob = (rawJob: any, source: JobSource): Job | null => {
 
 // --- API Fetching Logic ---
 const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 3, backoff = 300): Promise<Response> => {
+    // Add a User-Agent header to all requests to appear more like a legitimate browser and avoid blocks.
+    const defaultHeaders = {
+        'User-Agent': 'JobPilot/1.0 (Web App)',
+    };
+    const finalOptions = {
+        ...options,
+        headers: {
+            ...defaultHeaders,
+            ...options.headers,
+        },
+    };
+
     for (let i = 0; i < retries; i++) {
         try {
-            const response = await fetch(url, options);
+            const response = await fetch(url, finalOptions);
             if (!response.ok) {
                 const errorBody = await response.text();
                 throw new Error(`API call to ${url} failed with status ${response.status}: ${errorBody}`);
             }
             return response;
         } catch (error) {
-            console.warn(`Attempt ${i + 1} failed. Retrying in ${backoff * (i + 1)}ms...`);
+            console.warn(`Attempt ${i + 1} failed for ${url}. Retrying in ${backoff * (i + 1)}ms...`);
             if (i === retries - 1) throw error;
             await new Promise(res => setTimeout(res, backoff * (i + 1)));
         }
     }
-    throw new Error('API call failed after multiple retries.');
+    throw new Error(`API call failed after multiple retries for ${url}.`);
 };
 
 const fetchArbeitnowJobs = async (): Promise<any[]> => {
@@ -208,91 +243,68 @@ const fetchArbeitnowJobs = async (): Promise<any[]> => {
 };
 
 const fetchAdzunaJobs = async (): Promise<any[]> => {
-    console.log("Fetching jobs from Adzuna for multiple queries in parallel...");
-
-    const fetchJobsForQuery = async (query: string): Promise<any[]> => {
-        const queryJobs: any[] = [];
-        console.log(`Adzuna: Starting fetch for query "${query}"...`);
-        for (let page = 1; page <= API_FETCH_PAGES.adzuna; page++) {
-            try {
-                const url = `https://api.adzuna.com/v1/api/jobs/de/search/${page}?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=50&what=${encodeURIComponent(query)}&content-type=application/json`;
-                const response = await fetchWithRetry(url);
-                const data = await response.json();
-                if (data && data.results && data.results.length > 0) {
-                    queryJobs.push(...data.results);
-                } else {
-                    break; // Stop if no more results for this query
-                }
-            } catch (error) {
-                 console.error(`Adzuna fetch for query "${query}" page ${page} failed:`, error);
-                 if (page === 1) console.warn(`Could not fetch any Adzuna results for query "${query}".`);
-                 break; // Stop on subsequent failures for this query
-            }
-        }
-        console.log(`Adzuna: Fetched ${queryJobs.length} raw jobs for query "${query}".`);
-        return queryJobs;
-    };
-
-    const queryPromises = PRIMARY_SEARCH_QUERIES.map(query => fetchJobsForQuery(query));
-    const results = await Promise.allSettled(queryPromises);
-    
+    console.log("Fetching jobs from Adzuna using a single combined query...");
     const allJobs: any[] = [];
-    results.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value) {
-            allJobs.push(...result.value);
-        } else if (result.status === 'rejected') {
-            console.error(`Adzuna fetch failed for query "${PRIMARY_SEARCH_QUERIES[index]}":`, result.reason);
-        }
-    });
+    
+    // Combine all search queries into one using the 'what_or' parameter for efficiency.
+    const combinedQuery = PRIMARY_SEARCH_QUERIES.join(' ');
 
-    console.log(`Fetched ${allJobs.length} raw jobs from Adzuna across all queries.`);
+    for (let page = 1; page <= API_FETCH_PAGES.adzuna; page++) {
+        try {
+            // Using what_or to find jobs that match any of our keywords.
+            const url = `https://api.adzuna.com/v1/api/jobs/de/search/${page}?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=50&what_or=${encodeURIComponent(combinedQuery)}&content-type=application/json`;
+            const response = await fetchWithRetry(url);
+            const data = await response.json();
+            if (data && data.results && data.results.length > 0) {
+                allJobs.push(...data.results);
+            } else {
+                console.log(`Adzuna: No more results found on page ${page}. Stopping.`);
+                break; // Stop if no more results are returned.
+            }
+        } catch (error) {
+            console.error(`Adzuna fetch failed on page ${page}:`, error);
+            // If the first page fails, we can't get anything.
+            // If a subsequent page fails, we still have the results from previous pages.
+            // Breaking here is a safe strategy to avoid hammering a failing endpoint.
+            break;
+        }
+    }
+
+    console.log(`Fetched ${allJobs.length} raw jobs from Adzuna with a combined query.`);
     return allJobs;
 };
 
 const fetchJoobleJobs = async (): Promise<any[]> => {
-    console.log("Fetching jobs from Jooble for multiple queries in parallel...");
-
-    const fetchJobsForQuery = async (query: string): Promise<any[]> => {
-        const queryJobs: any[] = [];
-        console.log(`Jooble: Starting fetch for query "${query}"...`);
-        for (let page = 1; page <= 50; page++) { // Increased from 25 to 50 for more results
-            try {
-                const url = `https://de.jooble.org/api/${JOOBLE_API_KEY}`;
-                const response = await fetchWithRetry(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keywords: query, location: 'Deutschland', page: page })
-                });
-                const data = await response.json();
-                const jobs = data?.jobs || [];
-                if (jobs.length > 0) {
-                    queryJobs.push(...jobs);
-                } else {
-                    break; // Stop if no more results for this query
-                }
-            } catch (error) {
-                console.error(`Jooble fetch for query "${query}" page ${page} failed:`, error);
-                if (page === 1) console.warn(`Could not fetch any Jooble results for query "${query}".`);
-                break; // Stop on subsequent failures for this query
-            }
-        }
-        console.log(`Jooble: Fetched ${queryJobs.length} raw jobs for query "${query}".`);
-        return queryJobs;
-    };
+    console.log("Fetching jobs from Jooble using a single combined query...");
     
-    const queryPromises = PRIMARY_SEARCH_QUERIES.map(query => fetchJobsForQuery(query));
-    const results = await Promise.allSettled(queryPromises);
-
+    // Combine all search queries with an OR operator.
+    const combinedQuery = PRIMARY_SEARCH_QUERIES.join(' | ');
     const allJobs: any[] = [];
-    results.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value) {
-            allJobs.push(...result.value);
-        } else if (result.status === 'rejected') {
-            console.error(`Jooble fetch failed for query "${PRIMARY_SEARCH_QUERIES[index]}":`, result.reason);
+    
+    console.log(`Jooble: Starting fetch for combined query...`);
+    for (let page = 1; page <= 50; page++) { 
+        try {
+            const url = `https://de.jooble.org/api/${JOOBLE_API_KEY}`;
+            const response = await fetchWithRetry(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keywords: combinedQuery, location: 'Deutschland', page: page })
+            });
+            const data = await response.json();
+            const jobs = data?.jobs || [];
+            if (jobs.length > 0) {
+                allJobs.push(...jobs);
+            } else {
+                console.log(`Jooble: No more results found on page ${page}. Stopping.`);
+                break; // Stop if no more results.
+            }
+        } catch (error) {
+            console.error(`Jooble fetch failed on page ${page}:`, error);
+            break; // Stop on failure.
         }
-    });
-
-    console.log(`Fetched ${allJobs.length} raw jobs from Jooble across all queries.`);
+    }
+    
+    console.log(`Fetched ${allJobs.length} raw jobs from Jooble with a combined query.`);
     return allJobs;
 };
 
@@ -302,12 +314,11 @@ const fetchGermanTechJobs = async (): Promise<any[]> => {
     try {
         const response = await fetchWithRetry(url);
         const data = await response.json();
-        const relevantKeywords = [...PRIMARY_SEARCH_QUERIES, ...IT_SYSADMIN_KEYWORDS];
-        const filteredJobs = (data || []).filter((job: any) =>
-            checkKeywords(`${job.title} ${job.description}`, relevantKeywords)
-        );
-        console.log(`Fetched ${data.length} raw jobs from GermanTechJobs, ${filteredJobs.length} are relevant.`);
-        return filteredJobs;
+        const jobs = data || [];
+        // Removed pre-filtering to process all jobs from this source.
+        // The `normalizeJob` function will determine if a job is an `exact_match`.
+        console.log(`Fetched ${jobs.length} raw jobs from GermanTechJobs. All will be processed.`);
+        return jobs;
     } catch (e) {
         console.error("GermanTechJobs fetch failed:", e);
         throw e;
@@ -316,12 +327,13 @@ const fetchGermanTechJobs = async (): Promise<any[]> => {
 
 const fetchJobicyJobs = async (): Promise<any[]> => {
     console.log("Fetching jobs from Jobicy...");
-    // Expanded tags to capture a wider range of relevant system administration roles.
     const tags = [
         'sysadmin', 'support', 'devops', 'administrator', 'netzwerk', 'cloud', 
         'it-support', 'linux', 'windows', 'security', 'infrastructure'
     ].join(',');
-    const url = `https://jobicy.com/api/v2/remote-jobs?count=5000&geo=de,eu&industry=it&tag=${tags}`;
+    // Removed geo=de,eu filter as it was returning 0 results. 
+    // The internal normalizeJob function will handle location filtering.
+    const url = `https://jobicy.com/api/v2/remote-jobs?count=500&industry=it&tag=${tags}`;
     try {
         const response = await fetchWithRetry(url);
         const data = await response.json();
@@ -332,6 +344,52 @@ const fetchJobicyJobs = async (): Promise<any[]> => {
         console.error("Jobicy fetch failed:", e);
         throw e;
     }
+};
+
+const fetchArbeitsagenturJobs = async (): Promise<any[]> => {
+    console.log("Fetching jobs from Bundesagentur für Arbeit...");
+
+    const fetchJobsForQuery = async (query: string): Promise<any[]> => {
+        const queryJobs: any[] = [];
+        console.log(`BA: Starting fetch for query "${query}"...`);
+        for (let page = 1; page <= API_FETCH_PAGES.arbeitsagentur; page++) {
+            try {
+                // angebotsart=1 -> "Arbeit"
+                const url = `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs?was=${encodeURIComponent(query)}&page=${page}&size=50&angebotsart=1`;
+                const response = await fetchWithRetry(url, {
+                    headers: { 'X-API-Key': BA_API_KEY }
+                });
+                const data = await response.json();
+                const jobs = data?.stellenangebote || [];
+                if (jobs.length > 0) {
+                    queryJobs.push(...jobs);
+                } else {
+                    break; // Stop if no more results for this query
+                }
+            } catch (error) {
+                console.error(`BA fetch for query "${query}" page ${page} failed:`, error);
+                if (page === 1) console.warn(`Could not fetch any BA results for query "${query}".`);
+                break; // Stop on subsequent failures
+            }
+        }
+        console.log(`BA: Fetched ${queryJobs.length} raw jobs for query "${query}".`);
+        return queryJobs;
+    };
+    
+    const queryPromises = PRIMARY_SEARCH_QUERIES.map(query => fetchJobsForQuery(query));
+    const results = await Promise.allSettled(queryPromises);
+
+    const allJobs: any[] = [];
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value) {
+            allJobs.push(...result.value);
+        } else if (result.status === 'rejected') {
+            console.error(`BA fetch failed for query "${PRIMARY_SEARCH_QUERIES[index]}":`, result.reason);
+        }
+    });
+
+    console.log(`Fetched ${allJobs.length} raw jobs from Bundesagentur für Arbeit across all queries.`);
+    return allJobs;
 };
 
 
@@ -386,6 +444,7 @@ export const fetchJobs = async (forceRefresh: boolean = false): Promise<FetchJob
         { fn: fetchJoobleJobs, source: JobSource.JOOBLE },
         { fn: fetchGermanTechJobs, source: JobSource.GERMANTECHJOBS },
         { fn: fetchJobicyJobs, source: JobSource.JOBICY },
+        { fn: fetchArbeitsagenturJobs, source: JobSource.ARBEITSAGENTUR },
     ];
     
     const results = await Promise.allSettled(sourcesToFetch.map(s => s.fn()));
@@ -578,24 +637,9 @@ ${description}
     }
 };
 
-export const generateSuitabilityLetter = async (participant: ParticipantData, selectedJobs: Job[]): Promise<string> => {
-    console.log(`Generating suitability letter for: ${participant.name}`);
+export const generateSuitabilityLetter = async (participant: ParticipantData, selectedJobs: Job[], courseInfo: CourseInfo): Promise<string> => {
+    console.log(`Generating suitability letter for: ${participant.name} for course: ${courseInfo.title}`);
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    const courseInfo = {
-        name: "IT-Fachkraft im Gesundheitswesen mit Schwerpunkt IT-Systemadministration",
-        duration: "ca. 12 Monate",
-        degree: "IHK-Zertifikat, AZAV-zertifiziert, anerkannte IT-Zertifikate",
-        modules: [
-            "Grundlagen IT-Systeme & Support (Ticketing, Betriebssysteme, Datenschutz, Kommunikation)",
-            "Netzwerke & Netzwerksicherheit (TCP/IP, Routing, Firewalls, VPN, Security Basics)",
-            "Systemadministration Windows & Linux (Active Directory, Benutzerverwaltung, Rechte, Serverdienste)",
-            "IT-Security & Datenschutz im Gesundheitswesen (DSGVO, Zugriffskontrollen, IT-Sicherheitsrichtlinien)",
-            "Praxis- und Klinikanwendungen (digitale Patientenakten, Krankenhaus-IT, Schnittstellen HL7/FHIR)",
-            "Projektarbeit & Prüfungsvorbereitung (Praxisprojekt, Prüfungssimulation, Abschlussgespräch)"
-        ],
-        value: "praxisnah, digital durchführbar, hohe Arbeitsmarktrelevanz im Gesundheitswesen"
-    };
 
     const selectedJobsText = selectedJobs.length > 0
         ? `Zur Untermauerung meiner Jobaussichten habe ich folgende passende Stellenanzeigen identifiziert:\n` + selectedJobs.map(job => `- "${job.title}" bei ${job.company} (Link: ${job.url})\n  - Begründung der Passung: Diese Stelle erfordert Kenntnisse, die direkt in der Weiterbildung vermittelt werden und passt ideal zu meinem Ziel, im Gesundheits-IT-Sektor tätig zu werden.`).join('\n')
@@ -608,17 +652,17 @@ Struktur und Inhalt (strikt einhalten):
 
 1.  **Betreff:** "Antrag auf Förderung einer beruflichen Weiterbildung – Eignungsfeststellung und Motivation"
 
-2.  **Einleitung:** "Sehr geehrte Damen und Herren, hiermit beantrage ich die Förderung für die Weiterbildung '${courseInfo.name}' bei Hypercampus und möchte nachfolgend meine Motivation sowie Eignung für dieses Vorhaben darlegen."
+2.  **Einleitung:** "Sehr geehrte Damen und Herren, hiermit beantrage ich die Förderung für die Weiterbildung '${courseInfo.title}' bei Hypercampus und möchte nachfolgend meine Motivation sowie Eignung für dieses Vorhaben darlegen."
 
 3.  **Ausgangslage:** Beschreibe kurz die aktuelle Situation, bisherige Ausbildung und Berufserfahrung basierend auf: "${participant.background}".
 
 4.  **Fachliche Kompetenzen & Stärken:** Fasse die fachlichen Kompetenzen und Stärken zusammen: "${participant.skills}".
 
-5.  **Motivation & berufliches Ziel:** Erläutere die Motivation und das berufliche Ziel basierend auf: "${participant.motivation}". Formuliere ein klares Ziel im Bereich der IT im Gesundheitswesen.
+5.  **Motivation & berufliches Ziel:** Erläutere die Motivation und das berufliche Ziel basierend auf: "${participant.motivation}". Formuliere ein klares Ziel im Bereich der IT im Gesundheitswesen, das zum gewählten Kurs passt.
 
-6.  **Warum die Weiterbildung bei Hypercampus?:** Begründe, warum genau dieser Kurs (${courseInfo.name}) mit seinen Inhalten (${courseInfo.modules.join(', ')}) und dem Abschluss (${courseInfo.degree}) ideal passt, um die Lücke zwischen den vorhandenen Fähigkeiten und dem beruflichen Ziel zu schließen. Betone den Branchenfokus Gesundheitswesen.
+6.  **Warum die Weiterbildung bei Hypercampus?:** Begründe, warum genau dieser Kurs (${courseInfo.title}) mit seinen Inhalten (${courseInfo.modules.join(', ')}) und dem Abschluss (${courseInfo.degree}) ideal passt, um die Lücke zwischen den vorhandenen Fähigkeiten und dem beruflichen Ziel zu schließen. Betone den Branchenfokus Gesundheitswesen und den spezifischen Schwerpunkt des Kurses.
 
-7.  **Begründung der Förderfähigkeit und Arbeitsmarktrelevanz (§ 81 SGB III):** Formuliere die Begründung für den Bildungsgutschein basierend auf: "${participant.fundingReason}". Ergänze, dass die Digitalisierung im Gesundheitswesen einen hohen und steigenden Bedarf an IT-Fachkräften schafft und diese Weiterbildung die Wettbewerbsfähigkeit auf dem Arbeitsmarkt entscheidend verbessert.
+7.  **Begründung der Förderfähigkeit und Arbeitsmarktrelevanz (§ 81 SGB III):** Formuliere die Begründung für den Bildungsgutschein basierend auf: "${participant.fundingReason}". Ergänze, dass die Digitalisierung im Gesundheitswesen einen hohen und steigenden Bedarf an Fachkräften mit dem im Kurs vermittelten Profil schafft und diese Weiterbildung die Wettbewerbsfähigkeit auf dem Arbeitsmarkt entscheidend verbessert.
 
 8.  **Konkrete Jobperspektiven:** Integriere den folgenden Textabschnitt über Jobperspektiven: "${selectedJobsText}"
 
