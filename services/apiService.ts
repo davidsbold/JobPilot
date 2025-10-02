@@ -2,7 +2,6 @@
 // Note: These keys should be stored in environment variables in a production environment.
 import { Job, JobSource, StatsData, FetchJobsResult } from '../types';
 import { IT_SYSADMIN_KEYWORDS, CAREER_SWITCH_KEYWORDS, SKILL_TAXONOMY, JUNIOR_LEVEL_KEYWORDS, PRIMARY_SEARCH_QUERIES } from '../constants';
-import { GoogleGenAI } from "@google/genai";
 
 const ADZUNA_APP_ID = 'd027c711';
 const ADZUNA_APP_KEY = 'e4b2c698c84e6c1bd7e735907aa0e22c';
@@ -41,6 +40,20 @@ export interface CourseInfo {
     modules: string[];
     value: string;
 }
+
+// --- LAZY INITIALIZATION FOR GEMINI API ---
+let ai: any | null = null;
+const getAiClient = async (): Promise<any> => {
+    if (!ai) {
+        // Dynamically import the module ONLY when an AI function is used.
+        // This prevents any top-level module code from running on app startup
+        // and causing a crash in a browser environment.
+        const { GoogleGenAI } = await import('@google/genai');
+        // It assumes the execution environment provides process.env.API_KEY.
+        ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    }
+    return ai;
+};
 
 
 // --- Helper Functions ---
@@ -562,8 +575,7 @@ export const fetchStatistics = async (onlyCareerChange: boolean): Promise<StatsD
 export const generateCoverLetter = async (job: Job, userContext: UserContext): Promise<string> => {
     console.log(`Generating cover letter for: ${job.title} using Gemini API`);
     
-    // API Key is handled by the environment variable 'process.env.API_KEY'
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await getAiClient();
     
     const { title, company, location, description } = job;
     const jobRequirements = job.requirements.slice(0, 5).join(', ');
@@ -639,7 +651,7 @@ ${description}
 
 export const generateSuitabilityLetter = async (participant: ParticipantData, selectedJobs: Job[], courseInfo: CourseInfo): Promise<string> => {
     console.log(`Generating suitability letter for: ${participant.name} for course: ${courseInfo.title}`);
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await getAiClient();
 
     const selectedJobsText = selectedJobs.length > 0
         ? `Zur Untermauerung meiner Jobaussichten habe ich folgende passende Stellenanzeigen identifiziert:\n` + selectedJobs.map(job => `- "${job.title}" bei ${job.company} (Link: ${job.url})\n  - Begründung der Passung: Diese Stelle erfordert Kenntnisse, die direkt in der Weiterbildung vermittelt werden und passt ideal zu meinem Ziel, im Gesundheits-IT-Sektor tätig zu werden.`).join('\n')

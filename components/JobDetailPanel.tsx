@@ -28,12 +28,21 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({ job, onClose }) 
                         </div>
 
                         <div className="overflow-y-auto flex-grow space-y-6 pr-2">
-                            <div className="flex flex-wrap gap-2">
-                                {job.requirements.map(req => (
-                                    <span key={req} className="bg-sky-100 text-sky-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                                        {skillLabelMap.get(req) || req}
-                                    </span>
-                                ))}
+                            <div>
+                                <h4 className="text-md font-semibold text-slate-700 mb-3">Geforderte Skills</h4>
+                                <ul className="flex flex-wrap gap-2">
+                                    {job.requirements.map(req => (
+                                        <li key={req} className="bg-sky-100 text-sky-800 text-sm font-medium px-3 py-1 rounded-full flex items-center gap-1.5">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            {skillLabelMap.get(req) || req}
+                                        </li>
+                                    ))}
+                                    {job.requirements.length === 0 && (
+                                        <li className="text-sm text-slate-500">Keine spezifischen Skills aus der Beschreibung extrahiert.</li>
+                                    )}
+                                </ul>
                             </div>
                             
                             <div
